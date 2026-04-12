@@ -41,9 +41,9 @@ else()
     # Fallback: try standard find_package (in case pybind11 was installed system-wide)
     message(STATUS "pybind11 not found via Python, trying standard find_package...")
     find_package(pybind11 QUIET CONFIG)
-    
+
     if(NOT pybind11_FOUND)
-        message(FATAL_ERROR 
+        message(FATAL_ERROR
             "pybind11 not found!\n"
             "Please install pybind11:\n"
             "  pip install pybind11\n"
@@ -58,108 +58,20 @@ endif()
 
 pybind11_add_module(_smoother ${SOURCE_FILES})
 
-# Armadillo
-# Try to find Armadillo using CMake's find_package first (works if Armadillo was installed with CMake)
-find_package(Armadillo QUIET)
+# Armadillo (header-only mode using vendored headers)
+set(ARMADILLO_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/vendor/armadillo/include")
+target_include_directories(_smoother PRIVATE ${ARMADILLO_INCLUDE_DIR})
+target_compile_definitions(_smoother PRIVATE ARMA_DONT_USE_WRAPPER)
 
-if(NOT Armadillo_FOUND)
-    # Fallback: Manual detection for systems where Armadillo doesn't provide CMake config
-    message(STATUS "Armadillo not found via find_package, trying manual detection...")
-    
-    # Check for ARMADILLO_ROOT environment variable (user can set this)
-    if(DEFINED ENV{ARMADILLO_ROOT})
-        set(ARMADILLO_ROOT $ENV{ARMADILLO_ROOT})
-        message(STATUS "Using ARMADILLO_ROOT: ${ARMADILLO_ROOT}")
-    endif()
-    
-    # Find Armadillo headers
-    find_path(ARMADILLO_INCLUDE_DIR
-        NAMES armadillo
-        HINTS
-            ${ARMADILLO_ROOT}
-            $ENV{ARMADILLO_ROOT}
-        PATHS
-            /usr/include
-            /usr/local/include
-            /opt/homebrew/include                     # macOS Homebrew (Apple Silicon)
-            /opt/local/include                        # macOS MacPorts
-            C:/armadillo/include                      # Windows typical
-            C:/vcpkg/installed/*/include              # Windows vcpkg
-            $ENV{CONDA_PREFIX}/include                # Conda environments
-            ${CMAKE_PREFIX_PATH}/include
-        PATH_SUFFIXES
-            include
-            armadillo
-    )
-    
-    # Find Armadillo library
-    # Platform-specific library names
-    if(WIN32)
-        set(ARMADILLO_LIB_NAMES armadillo armadillo.lib)
-    else()
-        set(ARMADILLO_LIB_NAMES armadillo libarmadillo.so libarmadillo.dylib)
-    endif()
-    
-    find_library(ARMADILLO_LIB
-        NAMES ${ARMADILLO_LIB_NAMES}
-        HINTS
-            ${ARMADILLO_ROOT}
-            $ENV{ARMADILLO_ROOT}
-        PATHS
-            /usr/lib
-            /usr/local/lib
-            /usr/lib/x86_64-linux-gnu                # Debian/Ubuntu
-            /usr/lib64                               # Some Linux distributions
-            /opt/homebrew/lib                        # macOS Homebrew (Apple Silicon)
-            /opt/local/lib                           # macOS MacPorts
-            C:/armadillo/lib                         # Windows typical
-            C:/vcpkg/installed/*/lib                 # Windows vcpkg
-            $ENV{CONDA_PREFIX}/lib                   # Conda environments
-            ${CMAKE_PREFIX_PATH}/lib
-        PATH_SUFFIXES
-            lib
-            lib64
-            Release
-            Debug
-    )
-    
-    # Check if we found both header and library
-    if(ARMADILLO_INCLUDE_DIR AND ARMADILLO_LIB)
-        message(STATUS "Found Armadillo: ${ARMADILLO_LIB}")
-        message(STATUS "Armadillo include dir: ${ARMADILLO_INCLUDE_DIR}")
-        set(ARMADILLO_FOUND TRUE)
-        set(ARMADILLO_INCLUDE_DIRS ${ARMADILLO_INCLUDE_DIR})
-        set(ARMADILLO_LIBRARIES ${ARMADILLO_LIB})
-    else()
-        set(ARMADILLO_FOUND FALSE)
-    endif()
-endif()
-
-# Verify Armadillo was found
-if(NOT ARMADILLO_FOUND AND NOT Armadillo_FOUND)
-    message(FATAL_ERROR 
-        "Armadillo library not found!\n"
-        "Please install Armadillo:\n"
-        "  macOS:    brew install armadillo\n"
-        "  Linux:    sudo apt-get install libarmadillo-dev  (Debian/Ubuntu)\n"
-        "            sudo yum install armadillo-devel      (RHEL/CentOS)\n"
-        "  Windows:  vcpkg install armadillo\n"
-        "            or download from http://arma.sourceforge.net/\n"
-        "\n"
-        "You can also set ARMADILLO_ROOT to point to the installation directory."
-    )
-endif()
-
-# Use the appropriate variables based on detection method
-if(Armadillo_FOUND)
-    # Found via find_package
-    target_include_directories(_smoother PRIVATE ${ARMADILLO_INCLUDE_DIRS})
-    target_link_libraries(_smoother PUBLIC ${ARMADILLO_LIBRARIES})
+# BLAS and LAPACK (platform-native: Accelerate on macOS, OpenBLAS on Linux)
+if(APPLE)
+    find_library(ACCELERATE_FRAMEWORK Accelerate REQUIRED)
+    target_link_libraries(_smoother PRIVATE ${ACCELERATE_FRAMEWORK})
 else()
-    # Found via manual detection
-    target_include_directories(_smoother PRIVATE ${ARMADILLO_INCLUDE_DIRS})
-    target_link_libraries(_smoother PUBLIC ${ARMADILLO_LIBRARIES})
+    find_package(BLAS REQUIRED)
+    find_package(LAPACK REQUIRED)
+    target_link_libraries(_smoother PRIVATE ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES})
 endif()
 
 target_compile_definitions(_smoother PRIVATE VERSION_INFO=${PROJECT_VERSION})
-install(TARGETS _smoother LIBRARY DESTINATION .)
+install(TARGETS _smoother LIBRARY DESTINATION smoother)
