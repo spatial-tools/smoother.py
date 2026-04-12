@@ -5,8 +5,9 @@
 # under the terms of the MIT License; see LICENSE file for more details.
 #
 
-import _smoother
 import numpy as np
+
+from smoother import _smoother
 
 
 def bayes(
