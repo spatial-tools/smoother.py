@@ -33,7 +33,7 @@ name = "smoother-py"
 version = "0.1.0"
 requires-python = ">=3.11"
 
-license = {text = "MIT"}
+license = {file = "LICENSE"}
 
 authors = [
     {name = "Felipe Carlos", email = "efelipecarlos@gmail.com"}
@@ -100,6 +100,7 @@ build-backend = "scikit_build_core.build"
 [tool.scikit-build]
 # Build configuration for scikit-build-core
 wheel.expand-macos-universal-tags = true
+wheel.packages = ["smoother"]
 cmake.version = ">=3.15"
 cmake.args = []
 
@@ -114,6 +115,9 @@ sdist.include = [
     "src/**/*.hpp",
     "examples/**/*.py",
     "examples/**/*.csv",
+    "vendor/armadillo/include/**",
+    "vendor/armadillo/LICENSE.txt",
+    "vendor/armadillo/NOTICE.txt",
 ]
 
 sdist.exclude = [
@@ -128,3 +132,18 @@ sdist.exclude = [
     "dist",
     "*.egg-info",
 ]
+
+[tool.cibuildwheel]
+build = "cp311-* cp312-* cp313-*"
+skip = "*-win32 *-manylinux_i686 *-musllinux_*"
+
+[tool.cibuildwheel.linux]
+# Commented as this is too intrusive
+# before-all = "yum install -y openblas-devel lapack-devel || apt-get update && apt-get install -y libopenblas-dev liblapack-dev"
+
+[tool.cibuildwheel.macos]
+# macOS uses the Accelerate framework (built-in), so no extra deps needed
+
+[tool.cibuildwheel.windows]
+# Commented as this is too intrusive
+# before-all = "choco install -y openblas"
