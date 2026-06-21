@@ -1,98 +1,140 @@
-#include <armadillo>
-#include <carma/carma.h>
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <functional>
+#include <vector>
 
-#include <pybind11/stl.h>
-#include <pybind11/numpy.h>
-#include <pybind11/pybind11.h>
+#include <nanobind/nanobind.h>
+#include <nanobind/ndarray.h>
 
-namespace py = pybind11;
+namespace nb = nanobind;
+
+using DoubleMatrix =
+    nb::ndarray<const double, nb::ndim<2>, nb::c_contig, nb::device::cpu>;
+
+using DoubleVector =
+    nb::ndarray<const double, nb::ndim<1>, nb::c_contig, nb::device::cpu>;
 
 // compute outside indices of a vector as a mirror
-arma::ivec locus_neigh(int size, int leg)
-{
-    arma::ivec res(size + 2 * leg);
-    for (int i = 0; i < res.n_elem; ++i)
-    {
-        if (i < leg)
-            res(i) = leg - i - 1;
-        else if (i < size + leg)
-            res(i) = i - leg;
-        else
-            res(i) = 2 * size + leg - i - 1;
+std::vector<int64_t> locus_neigh(int size, int leg) {
+    std::vector<int64_t> res(size + 2 * leg);
+
+    for (int i = 0; i < static_cast<int>(res.size()); ++i) {
+        if (i < leg) {
+            res[i] = leg - i - 1;
+        }
+        
+        else if (i < size + leg) {
+            res[i] = i - leg;
+        }
+        
+        else {
+            res[i] = 2 * size + leg - i - 1;
+        }
     }
+
     return res;
 }
 
 // Code adapted from the sits R package.
 // You can learn more using the following link:
 //  https://github.com/e-sensing/sits/blob/master/src/smooth.cpp
-arma::mat bayes_smooth(const arma::mat &logits,
-                       const int &nrows,
-                       const int &ncols,
-                       const int &window_size,
-                       const arma::vec &smoothness,
-                       const double &neigh_fraction)
+nb::ndarray<nb::numpy, double, nb::ndim<2>> bayes_smooth(
+    DoubleMatrix logits,
+    const int nrows,
+    const int ncols,
+    const int window_size,
+    DoubleVector smoothness,
+    const double neigh_fraction)
 {
+    const size_t npixels = logits.shape(0);
+    const size_t nbands = logits.shape(1);
+
     // initialize result vectors
-    arma::mat res(logits.n_rows, logits.n_cols);
-    arma::vec neigh(window_size * window_size);
+    double *res = new double[npixels * nbands];
+    std::vector<double> neigh(window_size * window_size);
+
     // compute window leg
     int leg = window_size / 2;
+
     // compute locus mirror
-    arma::ivec loci = locus_neigh(nrows, leg);
-    arma::ivec locj = locus_neigh(ncols, leg);
+    std::vector<int64_t> loci = locus_neigh(nrows, leg);
+    std::vector<int64_t> locj = locus_neigh(ncols, leg);
+
     // compute number of neighbors to be used
     int neigh_high = std::ceil(neigh_fraction * window_size * window_size);
+
     // compute values for each pixel
     for (int i = 0; i < nrows; ++i)
     {
         for (int j = 0; j < ncols; ++j)
         {
             // for all bands
-            for (int band = 0; band < logits.n_cols; ++band)
+            for (size_t band = 0; band < nbands; ++band)
             {
                 // compute the neighborhood
                 for (int wi = 0; wi < window_size; ++wi)
                 {
                     for (int wj = 0; wj < window_size; ++wj)
                     {
-                        neigh(wi * window_size + wj) =
-                            logits(loci(wi + i) * ncols + locj(wj + j), band);
+                        neigh[wi * window_size + wj] =
+                            logits(loci[wi + i] * ncols + locj[wj + j], band);
                     }
                 }
                 if (neigh_fraction < 1.0)
                 {
-                    // Sort the neighbor logit values
-                    neigh = arma::sort(neigh, "descend");
+                    // Move the highest neigh_high logit values to the front
+                    // (in descending order)
+                    std::partial_sort(neigh.begin(),
+                                      neigh.begin() + neigh_high,
+                                      neigh.end(),
+                                      std::greater<double>());
                 }
-                // Create a vector to store the highest values
-                arma::vec high_values(neigh_high);
-                // copy the highest values to the new vector
-                int nh = 0;
-                for (auto it = neigh.begin(); it != neigh.begin() + neigh_high; ++it)
-                {
-                    high_values(nh++) = (*it);
-                }
+                
                 // get the estimates for prior
                 // normal with mean m0 and variance s0
-                double s0 = var(high_values);
-                double m0 = mean(high_values);
+                // (sample variance, N - 1 denominator)
+                double sum = 0.0;
+                
+                for (int k = 0; k < neigh_high; ++k) {
+                    sum += neigh[k];
+                }
+                    
+                double m0 = sum / neigh_high;
+                double sq_sum = 0.0;
+
+                for (int k = 0; k < neigh_high; ++k) {
+                    double dev = neigh[k] - m0;
+                    sq_sum += dev * dev;
+                }
+
+                double s0 = neigh_high > 1 ? sq_sum / (neigh_high - 1) : 0.0;
+                
                 // get the current value
                 double x0 = logits(i * ncols + j, band);
+                
                 // weight for Bayesian estimator
                 double w = s0 / (s0 + smoothness(band));
+                
                 // apply Bayesian smoother
-                res(i * ncols + j, band) = w * x0 + (1 - w) * m0;
+                res[(i * ncols + j) * nbands + band] = w * x0 + (1 - w) * m0;
             }
         }
     }
-    return res;
+
+    // create a capsule to own the result array
+    nb::capsule owner(res, [](void *p) noexcept
+                      { delete[] static_cast<double *>(p); });
+
+    // prepare the result as a numpy array
+    return nb::ndarray<nb::numpy, double, nb::ndim<2>>(
+        res, {npixels, nbands}, owner);
 }
 
-PYBIND11_MODULE(_smoother, m)
-{
+NB_MODULE(_smoother, m) {
     // Optional docstring
     m.doc() = "(Internal) Spatial Smoothing Functions";
 
+    // define the bayes smoothing function
     m.def("bayes", &bayes_smooth, "Bayes Smooth");
 }
