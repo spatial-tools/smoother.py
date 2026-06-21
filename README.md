@@ -7,7 +7,7 @@ Spatial smoothing methods for probability maps.
 To install the package, you can use pip:
 
 ```bash
-pip install git+https://github.com/m3nin0-labs/smoother.py
+pip install smoother-py
 ```
 
 ### Methods available
