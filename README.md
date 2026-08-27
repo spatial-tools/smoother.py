@@ -88,4 +88,4 @@ We welcome contributions! If you have suggestions for improvements or bug fixes,
 
 ### License
 
-`smoother.py` is distributed under the MIT license. See [LICENSE](./LICENSE) for more details.
+Code is licensed under the **GNU General Public License v2.0**. See the [LICENSE](LICENSE) file. The bayes smooth code is ported from the [`sits`](https://github.com/e-sensing/sits) R package.
