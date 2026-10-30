@@ -1,6 +1,6 @@
 [project]
 name = "smoother-py"
-version = "0.1.1"
+version = "0.1.2"
 description = "Spatial smoothing methods for probability maps."
 readme = "README.md"
 requires-python = ">=3.11"

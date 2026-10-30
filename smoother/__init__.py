@@ -27,7 +27,7 @@ init_backends()
 #
 # Package version
 #
-__version__ = "0.1.0"
+__version__ = "0.1.2"
 
 #
 # Public API functions
