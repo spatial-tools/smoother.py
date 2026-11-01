@@ -31,6 +31,8 @@ smoothed = smoother.smooth(your_numpy_array)
 smoothed = smoother.smooth(your_numpy_array, method="bayes", window_size=5)
 ```
 
+The `bayes` method gives the same result as `sits_smooth()` from sits 1.5.4. Its defaults are the same as sits: `window_size=9`, `smoothness=20` and `neigh_fraction=0.5`. Exact `0` and `1` probabilities are handled as sits does, so quantized input (e.g. 8-bit) works. Invalid parameters raise `ValueError`.
+
 You can use [rasterio](https://rasterio.readthedocs.io/en/latest/index.html) or other library to load the numpy array.
 
 #### xarray
