@@ -19,8 +19,9 @@
 import numpy as np
 import xarray as xr
 
+from smoother.arrays import check_data_shape, check_smoothness
 from smoother.backends.numpy import bayes_numpy
-from smoother.bayes import bayes
+from smoother.bayes import NEIGH_FRACTION, SMOOTHNESS, WINDOW_SIZE, bayes
 
 # Possible dimension names
 CLASS_DIM_NAMES = ("class", "classes", "band", "bands", "variable")
@@ -105,9 +106,9 @@ def infer_dims(data, class_dim, y_dim, x_dim):
 @bayes.register(xr.DataArray)
 def bayes_dataarray(
     data: xr.DataArray,
-    window_size: int = 7,
-    smoothness: int = 10,
-    neigh_fraction: float = 0.5,
+    window_size: int = WINDOW_SIZE,
+    smoothness: float | list[float] = SMOOTHNESS,
+    neigh_fraction: float = NEIGH_FRACTION,
     class_dim: str | None = None,
     y_dim: str | None = None,
     x_dim: str | None = None,
@@ -115,6 +116,12 @@ def bayes_dataarray(
     """Bayesian smoothing of a DataArray with class, y and x dims."""
     # infer the dimension names
     class_dim, y_dim, x_dim = infer_dims(data, class_dim, y_dim, x_dim)
+
+    # check the shape
+    check_data_shape([data.sizes[dim] for dim in (class_dim, y_dim, x_dim)])
+
+    # check the smoothness
+    check_smoothness(smoothness, data.sizes[class_dim])
 
     # apply the smoothing
     result = xr.apply_ufunc(

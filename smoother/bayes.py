@@ -17,14 +17,27 @@
 """Bayesian smoothing of probability rasters."""
 
 from functools import singledispatch
+from numbers import Integral, Real
+
+import numpy as np
+
+from smoother.arrays import check_data_shape, check_smoothness
+
+# Default parameters, the same as sits ``sits_smooth()``
+WINDOW_SIZE = 9
+SMOOTHNESS = 20
+NEIGH_FRACTION = 0.5
+
+# Smallest window allowed (sits documents 3, and checks 5 internally)
+MIN_WINDOW_SIZE = 3
 
 
 @singledispatch
 def bayes(
     data,
-    window_size: int = 7,
-    smoothness: int = 10,
-    neigh_fraction: float = 0.5,
+    window_size: int = WINDOW_SIZE,
+    smoothness: float = SMOOTHNESS,
+    neigh_fraction: float = NEIGH_FRACTION,
     **kwargs,
 ):
     """Bayesian smoothing of a probability raster (internal dispatch target).
@@ -42,3 +55,47 @@ def bayes(
         "numpy.ndarray or xarray.DataArray (xarray support requires "
         '`pip install "smoother-py[xarray]"`)'
     )
+
+
+def validate_bayes(
+    data,
+    window_size=WINDOW_SIZE,
+    smoothness=SMOOTHNESS,
+    neigh_fraction=NEIGH_FRACTION,
+    **_,
+):
+    """Check the parameters of the ``bayes`` method, as sits does.
+
+    Raises:
+        `ValueError` when a parameter is not valid.
+    """
+    if (
+        not isinstance(window_size, Integral)
+        or isinstance(window_size, bool)
+        or window_size < MIN_WINDOW_SIZE
+        or window_size % 2 == 0
+    ):
+        raise ValueError(
+            f"window_size must be an odd integer >= {MIN_WINDOW_SIZE}, "
+            f"got {window_size!r}"
+        )
+
+    if (
+        not isinstance(neigh_fraction, Real)
+        or isinstance(neigh_fraction, bool)
+        or not 0 < neigh_fraction <= 1
+    ):
+        raise ValueError(f"neigh_fraction must be in (0, 1], got {neigh_fraction!r}")
+
+    # the class count is only known here for numpy input. The xarray backend
+    # checks the shape and per-class length once the class dimension is known
+    if isinstance(data, np.ndarray):
+        # check the shape
+        check_data_shape(data.shape)
+
+        # check the smoothness
+        check_smoothness(smoothness, data.shape[0])
+
+    else:
+        # check the smoothness
+        check_smoothness(smoothness, np.size(smoothness))

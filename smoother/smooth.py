@@ -16,10 +16,10 @@
 
 """Generic entry point for the smoothing methods."""
 
-from smoother.bayes import bayes
+from smoother.bayes import bayes, validate_bayes
 
 METHODS = {
-    "bayes": bayes,
+    "bayes": (bayes, validate_bayes),
 }
 
 
@@ -40,16 +40,17 @@ def smooth(data, method="bayes", **kwargs):
         method (str): Smoothing method to apply. Available: ``"bayes"``
                       (Bayesian smoothing with spatial predictors).
 
-        window_size (int): Size of the smoothing neighbourhood
-                           (min = 3, max = 21). Default: ``7``.
+        window_size (int): Size of the smoothing neighbourhood. Default: ``9``.
 
-        smoothness (int): Estimated variance of the logit of class
-                          probabilities (min = 1, max = 200). A larger value
-                          produces a stronger smoothing effect. Default: ``10``.
+        smoothness (float | sequence of float): Estimated variance of the
+                          logit of class probabilities. Either one number for
+                          all classes, or one number per class (in class
+                          order). Must be > 0. A larger value produces a
+                          stronger smoothing effect. Default: ``20``.
 
         neigh_fraction (float): Fraction of neighbours with the highest
                                 probabilities used in the Bayesian inference.
-                                Default: ``0.5``.
+                                In ``(0, 1]``. Default: ``0.5``.
 
         class_dim (str | None): Name of the class dimension. ``xarray`` input
                                 only. Inferred by name when omitted.
@@ -62,10 +63,18 @@ def smooth(data, method="bayes", **kwargs):
 
     Returns:
         The smoothed probability raster, in the same type and shape as ``data``.
-        For ``xarray.DataArray`` input, dimensions, coordinates, attributes and
-        the CRS are preserved.
+        ``data`` itself is never changed. For ``xarray.DataArray`` input, dimensions,
+        coordinates, attributes and the CRS are preserved.
+
+    Raises:
+        ValueError: when ``method`` is unknown or a parameter is not valid.
 
     Note:
+        As in sits, exact ``0`` and ``1`` probabilities are set to ``1e-6`` and
+        ``0.999999`` before the logit, so quantized (e.g. 8-bit) input works.
+        NaN neighbours are ignored. A NaN pixel takes the mean of its highest
+        neighbours.
+
         ``class_dim``, ``y_dim`` and ``x_dim`` only apply to ``xarray.DataArray``
         input. Passing them with a ``numpy.ndarray`` raises a ``TypeError``.
 
@@ -78,11 +87,15 @@ def smooth(data, method="bayes", **kwargs):
         original smooth function in R.
     """
     try:
-        method_fn = METHODS[method]
+        method_fn, validate = METHODS[method]
 
     except KeyError:
         raise ValueError(
             f"unknown method {method!r}; available methods are {sorted(METHODS)}"
         ) from None
 
+    # validate the parameters
+    validate(data, **kwargs)
+
+    # apply the smoothing method
     return method_fn(data, **kwargs)

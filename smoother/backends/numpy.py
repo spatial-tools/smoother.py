@@ -19,32 +19,46 @@
 import numpy as np
 
 from smoother import _smoother
-from smoother.bayes import bayes
+from smoother.arrays import class_smoothness
+from smoother.bayes import (
+    NEIGH_FRACTION,
+    SMOOTHNESS,
+    WINDOW_SIZE,
+    bayes,
+)
 
 
 @bayes.register(np.ndarray)
 def bayes_numpy(
     data: np.ndarray,
-    window_size: int = 7,
-    smoothness: int = 10,
-    neigh_fraction: float = 0.5,
+    window_size: int = WINDOW_SIZE,
+    smoothness: float | list[float] = SMOOTHNESS,
+    neigh_fraction: float = NEIGH_FRACTION,
 ) -> np.ndarray:
     """Bayesian smoothing of a ``(class, y, x)`` array."""
     nclasses, nrows, ncols = data.shape
 
-    # prepare smoothness
-    smoothness = np.repeat(smoothness, nclasses).astype(np.float64)
+    # one smoothness value per class
+    smoothness = class_smoothness(smoothness, nclasses)
+
+    # work on a float64 copy, so the caller's array is never changed
+    values = np.array(data, dtype=np.float64)
+
+    # avoid -Inf or +Inf in logits, as sits does: only exact 0 and 1 change
+    values[values == 1.0] = 0.999999
+    values[values == 0.0] = 0.000001
 
     # compute logits
-    logit = np.log(data / (np.sum(data, axis=0, keepdims=True) - data))
+    logit = np.log(values / (np.sum(values, axis=0, keepdims=True) - values))
     logit = np.ascontiguousarray(logit.reshape(nclasses, -1).T)
 
     # smooth
-    data = _smoother.bayes(logit, nrows, ncols, window_size, smoothness, neigh_fraction)
+    logit = _smoother.bayes(
+        logit, nrows, ncols, window_size, smoothness, neigh_fraction
+    )
 
     # inverse logit
-    data = np.exp(data) / (np.exp(data) + 1)
-    data = data.T
+    values = np.exp(logit) / (np.exp(logit) + 1)
 
     # return data in the same input shape
-    return data.reshape((nclasses, nrows, ncols))
+    return values.T.reshape((nclasses, nrows, ncols))
